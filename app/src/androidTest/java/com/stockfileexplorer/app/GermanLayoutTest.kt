@@ -38,12 +38,27 @@ class GermanLayoutTest {
     }
 
     private fun scrollToText(device: UiDevice, text: String): Boolean {
+        if (device.hasObject(By.textContains(text))) return true
+        // The list can come back already scrolled past the target (state kept across recreation): go to top first.
+        repeat(15) {
+            device.swipe(300, 400, 300, 1100, 20)
+            Thread.sleep(150)
+        }
         repeat(40) {
             if (device.hasObject(By.textContains(text))) return true
             device.swipe(300, 900, 300, 300, 20)
             Thread.sleep(250)
         }
         return device.hasObject(By.textContains(text))
+    }
+
+    // Fast swipes first (a slow drag that starts on a row can register as a long press and select it,
+    // which happened once Download held many more evidence screenshots), slow drags only as a fallback.
+    private fun findFixture(device: UiDevice, text: String): Boolean =
+        device.wait(Until.hasObject(By.textContains(text)), 8000) || scrollToText(device, text) || slowScrollToText(device, text)
+
+    private fun clearSelection(device: UiDevice) {
+        if (device.hasObject(By.res("selection_bar"))) { device.pressBack(); device.wait(Until.gone(By.res("selection_bar")), 3000) }
     }
 
     @Test
@@ -79,13 +94,13 @@ class GermanLayoutTest {
         // (The "Interner Speicher" card now opens the storage analysis; the folder
         // browser opens via the "Hauptspeicher" shortcut.)
         device.findObject(By.text("Hauptspeicher")).click()
-        assertTrue(device.wait(Until.hasObject(By.text("Download")), 8000))
+        assertTrue("Download folder row visible in the root listing",
+            device.wait(Until.hasObject(By.text("Download")), 8000) || scrollToText(device, "Download").also { if (!it) device.takeScreenshot(File("/sdcard/Download/sfe-german-root-download-missing.png")) })
         device.findObject(By.text("Download")).click()
         // Name-sorted screenshots from earlier test classes (sfe-back-*) push the
         // fixtures off the first screen; scroll like the gallery part below does.
         // If still missing, capture evidence before failing.
-        if (!device.wait(Until.hasObject(By.textContains("sfe-fixture-report.pdf")), 8000) &&
-            !slowScrollToText(device, "sfe-fixture-report.pdf")) {
+        if (!findFixture(device, "sfe-fixture-report.pdf")) {
             device.takeScreenshot(File("/sdcard/Download/sfe-german-download-missing.png"))
             throw AssertionError("PDF fixture visible in Download")
         }
@@ -101,6 +116,7 @@ class GermanLayoutTest {
 
         // Long-press floats the Rename/Share quick actions on the right side; the bottom
         // selection bar keeps Copy/Move/Delete only - no More step.
+        clearSelection(device)
         val fixtureRow = device.findObject(By.textContains("sfe-fixture-report.pdf"))
             ?: throw AssertionError("PDF fixture row still visible for long press")
         fixtureRow.longClick()
@@ -126,12 +142,13 @@ class GermanLayoutTest {
             device.wait(Until.hasObject(By.text("Interner Speicher")), 10000)
         )
         device.findObject(By.text("Hauptspeicher")).click()
-        assertTrue(device.wait(Until.hasObject(By.text("Download")), 8000))
+        assertTrue("Download folder row visible in the root listing",
+            device.wait(Until.hasObject(By.text("Download")), 8000) || scrollToText(device, "Download").also { if (!it) device.takeScreenshot(File("/sdcard/Download/sfe-german-root-download-missing.png")) })
         device.findObject(By.text("Download")).click()
-        if (!device.wait(Until.hasObject(By.textContains("sfe-fixture-report.pdf")), 8000) &&
-            !slowScrollToText(device, "sfe-fixture-report.pdf")) {
+        if (!findFixture(device, "sfe-fixture-report.pdf")) {
             throw AssertionError("PDF fixture visible in Download at 1.3 font")
         }
+        clearSelection(device)
         device.findObject(By.textContains("sfe-fixture-report.pdf")).longClick()
         assertTrue(
             "Floating quick actions at 1.3 font",
@@ -155,7 +172,7 @@ class GermanLayoutTest {
         device.findObject(By.text("Bilder")).click()
         assertTrue(
             "Sample image listed in Bilder category",
-            scrollToText(device, "sfe-sample-picture.jpg")
+            scrollToText(device, "sfe-sample-picture.jpg").also { if (!it) device.takeScreenshot(File("/sdcard/Download/sfe-german-gallery-sample-missing.png")) }
         )
         assertFalse(
             "Category opened from cached scan without a blocking rescan",
